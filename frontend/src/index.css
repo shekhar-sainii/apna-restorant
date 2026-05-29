@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Extra padding for iOS home indicator above mobile tab bar */
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Blinkit-style auto-scrolling offers above bottom tabs */
+.offers-marquee-mask {
+  overflow: hidden;
+  width: 100%;
+}
+
+.offers-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: offers-marquee 28s linear infinite;
+}
+
+.offers-marquee-track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes offers-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}

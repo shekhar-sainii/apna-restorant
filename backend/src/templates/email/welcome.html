@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Welcome to Apna Restorant</title>
+  <style>
+    body {
+      font-family: 'Outfit', 'Inter', sans-serif;
+      background-color: #f7f9fc;
+      margin: 0;
+      padding: 0;
+      color: #333333;
+    }
+    .container {
+      max-width: 600px;
+      margin: 40px auto;
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.05);
+      overflow: hidden;
+      border: 1px solid #eaeaea;
+    }
+    .header {
+      background: linear-gradient(135deg, #ff6b35, #ff8c42);
+      padding: 40px 20px;
+      text-align: center;
+      color: #ffffff;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .content {
+      padding: 40px 30px;
+      line-height: 1.6;
+    }
+    .content h2 {
+      color: #1a1a1a;
+      font-size: 22px;
+      margin-top: 0;
+    }
+    .content p {
+      font-size: 16px;
+      color: #555555;
+      margin-bottom: 24px;
+    }
+    .cta-button {
+      display: inline-block;
+      padding: 14px 30px;
+      background-color: #ff6b35;
+      color: #ffffff !important;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 16px;
+      box-shadow: 0 4px 15px rgba(255, 107, 53, 0.3);
+      text-align: center;
+    }
+    .footer {
+      background-color: #fafafa;
+      padding: 24px;
+      text-align: center;
+      font-size: 13px;
+      color: #888888;
+      border-top: 1px solid #eaeaea;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Apna Restorant 🍕</h1>
+    </div>
+    <div class="content">
+      <h2>Hey {{name}}, welcome aboard!</h2>
+      <p>We are absolutely thrilled to have you join our food community. At Apna Restorant, we strive to bring the most delicious, freshly prepared dishes straight to your table or doorstep.</p>
+      <p>Explore our dynamic menu filled with local favorites and international delicacies, custom-curated by our chefs.</p>
+      <p style="text-align: center; margin: 35px 0;">
+        <a href="{{loginUrl}}" class="cta-button">Explore Our Menu</a>
+      </p>
+      <p>If you have any questions or feedback, just reply to this email. We're here to help!</p>
+      <p>Cheers,<br><strong>The Apna Restorant Team</strong></p>
+    </div>
+    <div class="footer">
+      &copy; 2026 Apna Restorant. All rights reserved.<br>
+      123 Food Street, Culinary Arts District.
+    </div>
+  </div>
+</body>
+</html>

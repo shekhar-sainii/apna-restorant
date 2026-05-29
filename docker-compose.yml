@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: apna-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: apna_restorant
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - mongodb
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/apna_restorant
+    # Uncomment the next line to run in development mode (hot reload)
+    # command: ["npm", "run", "dev"]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    # Uncomment the next line to run Vite dev server (hot reload)
+    # command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    environment:
+      - VITE_API_URL=http://localhost:5000/api/v1
+      # Add extra frontend env vars here (e.g., VITE_GOOGLE_CLIENT_ID)
+
+volumes:
+  mongodb-data:
