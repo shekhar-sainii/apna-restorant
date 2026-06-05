@@ -33,6 +33,7 @@ const AdminUsers      = lazy(() => import("../pages/admin/Users"));
 const AdminReports    = lazy(() => import("../pages/admin/Reports"));
 const AdminSettings   = lazy(() => import("../pages/admin/Settings"));
 const AdminNotifications = lazy(() => import("../pages/admin/Notifications"));
+const AdminPayments   = lazy(() => import("../pages/admin/Payments"));
 
 // ── Lazy-loaded Error Pages ───────────────────────────────────────────────────
 const NotFound        = lazy(() => import("../pages/error/NotFound"));
@@ -100,6 +101,7 @@ export const routes: RouteObject[] = [
       { path: "coupons",         element: withSuspense(<AdminCoupons />) },
       { path: "users",           element: withSuspense(<AdminUsers />) },
       { path: "reports",         element: withSuspense(<AdminReports />) },
+      { path: "payments",        element: withSuspense(<AdminPayments />) },
       { path: "notifications",   element: withSuspense(<AdminNotifications />) },
       { path: "settings",        element: withSuspense(<AdminSettings />) }
     ]

@@ -10,7 +10,9 @@ let io: SocketIOServer | undefined;
 export const initSocket = (httpServer: HttpServer): SocketIOServer => {
   io = new SocketIOServer(httpServer, {
     cors: {
-      origin: process.env.FRONTEND_URL || "*",
+      origin: process.env.FRONTEND_URL
+        ? process.env.FRONTEND_URL.split(",")
+        : "*",
       credentials: true,
     },
     pingTimeout: 60000,

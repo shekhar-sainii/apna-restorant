@@ -13,6 +13,8 @@ import {
 import orderService, { type Order, type OrderStatus } from "../../services/orderService";
 import { useAuth } from "../../context/AuthContext";
 import { getOrCreateGuestSessionId } from "../../utils/guestSession";
+import { socket } from "../../services/socket";
+import authService from "../../services/authService";
 
 const TRACKING_STEPS: { status: OrderStatus; label: string; icon: React.ElementType }[] = [
   { status: "pending", label: "Order Placed", icon: CheckCircle },
@@ -60,6 +62,40 @@ export const OrderTracking: React.FC = () => {
       }
     };
     load();
+  }, [id, isGuest]);
+
+  useEffect(() => {
+    if (!id) return;
+
+    const token = authService.getToken();
+    if (token) {
+      socket.auth = { token };
+    }
+    socket.connect();
+
+    const guestSessionId = isGuest ? getOrCreateGuestSessionId() : undefined;
+    socket.emit("join-order-room", { orderId: id, guestSessionId });
+
+    const handleStatusUpdated = (data: { orderId: string; status: OrderStatus }) => {
+      if (data.orderId === id) {
+        setOrder((prev) => (prev ? { ...prev, status: data.status } : null));
+      }
+    };
+
+    const handlePaymentStatusUpdated = (data: { orderId: string; paymentStatus: string }) => {
+      if (data.orderId === id) {
+        setOrder((prev) => (prev ? { ...prev, paymentStatus: data.paymentStatus as any } : null));
+      }
+    };
+
+    socket.on("order-status-updated", handleStatusUpdated);
+    socket.on("payment-status-updated", handlePaymentStatusUpdated);
+
+    return () => {
+      socket.emit("leave-order-room", { orderId: id });
+      socket.off("order-status-updated", handleStatusUpdated);
+      socket.off("payment-status-updated", handlePaymentStatusUpdated);
+    };
   }, [id, isGuest]);
 
   if (loading) {
@@ -152,8 +188,20 @@ export const OrderTracking: React.FC = () => {
         <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-3xl p-6 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Payment</p>
           <div className="flex items-center gap-2">
-            <Clock className="w-5 h-5 text-orange-500" />
-            <span className="font-extrabold text-lg text-slate-800 dark:text-slate-200 capitalize">
+            {order.paymentStatus === "paid" ? (
+              <CheckCircle className="w-5 h-5 text-green-500" />
+            ) : order.paymentStatus === "failed" ? (
+              <XCircle className="w-5 h-5 text-red-500" />
+            ) : (
+              <Clock className="w-5 h-5 text-amber-500 animate-pulse" />
+            )}
+            <span className={`font-extrabold text-lg capitalize ${
+              order.paymentStatus === "paid"
+                ? "text-green-600 dark:text-green-400"
+                : order.paymentStatus === "failed"
+                ? "text-red-600 dark:text-red-400"
+                : "text-amber-600 dark:text-amber-400"
+            }`}>
               {order.paymentMethod} · {order.paymentStatus}
             </span>
           </div>

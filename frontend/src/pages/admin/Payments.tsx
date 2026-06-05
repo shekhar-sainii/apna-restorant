@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { RefreshCw, AlertCircle, X, CreditCard, QrCode } from "lucide-react";
+import { RefreshCw, AlertCircle, Search, CreditCard, X, QrCode } from "lucide-react";
 import { Table } from "../../components/common/Table";
 import type { Column } from "../../components/common/Table";
 import { Button } from "../../components/common/Button";
@@ -8,52 +8,29 @@ import type { Order, OrderStatus, PaymentMethod } from "../../services/orderServ
 import { socket } from "../../services/socket";
 import authService from "../../services/authService";
 
-const STATUS_COLORS: Record<string, string> = {
-  pending:          "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300",
-  accepted:         "bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300",
-  preparing:        "bg-purple-100 dark:bg-purple-950/50 text-purple-800 dark:text-purple-300",
-  ready:            "bg-cyan-100 dark:bg-cyan-950/50 text-cyan-800 dark:text-cyan-300",
-  out_for_delivery: "bg-indigo-100 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-300",
-  delivered:        "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300",
-  cancelled:        "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300",
-};
-
-const getNextStatus = (order: Order): OrderStatus | null => {
-  if (order.status === "pending") return "accepted";
-  if (order.status === "accepted") return "preparing";
-  if (order.status === "preparing") return "ready";
-  if (order.status === "ready") {
-    return order.orderType === "delivery" ? "out_for_delivery" : "delivered";
-  }
-  if (order.status === "out_for_delivery") return "delivered";
-  return null;
-};
-
-const getNextLabel = (order: Order): string => {
-  if (order.status === "pending") return "Accept";
-  if (order.status === "accepted") return "Start Prep";
-  if (order.status === "preparing") return "Mark Ready";
-  if (order.status === "ready") {
-    return order.orderType === "delivery" ? "Send Out" : "Serve / Complete";
-  }
-  if (order.status === "out_for_delivery") return "Complete Order";
-  return "";
-};
-
-export const Orders: React.FC = () => {
+export const Payments: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [methodFilter, setMethodFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+
+  // Modal State
+  const [modalOrder, setModalOrder] = useState<Order | null>(null);
+  const [modalPayMethod, setModalPayMethod] = useState<"cash" | "online">("cash");
+  const [modalPayStatus, setModalPayStatus] = useState<"pending" | "paid" | "failed">("pending");
+  const [showQrPopup, setShowQrPopup] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await orderService.getAll({ limit: 50 });
+      const res = await orderService.getAll({ limit: 100 });
       setOrders(res.data ?? []);
     } catch (err: any) {
-      setError(err.message || "Failed to load orders");
+      setError(err.message || "Failed to load payment transactions");
     } finally {
       setLoading(false);
     }
@@ -65,28 +42,12 @@ export const Orders: React.FC = () => {
     const token = authService.getToken();
     if (token) {
       socket.auth = { token };
-      socket.connect();
     }
+    socket.connect();
+
+    socket.emit("join-admin-room");
 
     const handleNewOrder = (data: { order: Order }) => {
-      try {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        const ctx = new AudioCtx();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = "sine";
-        osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // A5
-        gain.gain.setValueAtTime(0.3, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.4);
-      } catch (e) {
-        console.error("Audio error", e);
-      }
-
       setOrders((prev) => {
         if (prev.some((o) => o._id === data.order._id)) return prev;
         return [data.order, ...prev];
@@ -124,13 +85,6 @@ export const Orders: React.FC = () => {
     };
   }, [fetchOrders]);
 
-  // Modal State
-  const [modalOrder, setModalOrder] = useState<Order | null>(null);
-  const [modalPayMethod, setModalPayMethod] = useState<"cash" | "online">("cash");
-  const [modalPayStatus, setModalPayStatus] = useState<"pending" | "paid" | "failed">("pending");
-  const [showQrPopup, setShowQrPopup] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-
   const openModal = (order: Order, method?: "cash" | "online") => {
     setModalOrder(order);
     setModalPayMethod(method ?? order.paymentMethod ?? "cash");
@@ -166,26 +120,22 @@ export const Orders: React.FC = () => {
       );
       setModalOrder(null);
     } catch (err: any) {
-      alert(err.message || "Failed to update order payment");
+      alert(err.message || "Failed to update payment details");
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDirectStatusUpdate = async (orderId: string, nextStatus: OrderStatus) => {
-    try {
-      const res = (await orderService.updateStatus(orderId, nextStatus)) as any;
-      if (res.data) {
-        setOrders((prev) =>
-          prev.map((o) => (o._id === orderId ? { ...o, status: res.data.status } : o))
-        );
-      }
-    } catch (err: any) {
-      alert(err.message || "Failed to update order status");
-    }
-  };
-
-  const filtered = statusFilter === "all" ? orders : orders.filter((o) => o.status === statusFilter);
+  const filtered = orders.filter((o) => {
+    const matchesSearch =
+      o.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (o.customer?.name ?? o.guestName ?? "Guest")
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
+    const matchesMethod = methodFilter === "all" ? true : o.paymentMethod === methodFilter;
+    const matchesStatus = statusFilter === "all" ? true : o.paymentStatus === statusFilter;
+    return matchesSearch && matchesMethod && matchesStatus;
+  });
 
   const columns: Column<Order>[] = [
     {
@@ -193,98 +143,67 @@ export const Orders: React.FC = () => {
       accessor: (row) => <span className="font-extrabold text-orange-500">{row.orderNumber}</span>,
     },
     {
+      header: "Date & Time",
+      accessor: (row) => {
+        const date = new Date(row.createdAt);
+        return (
+          <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">
+            {date.toLocaleDateString()} {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        );
+      },
+    },
+    {
       header: "Customer",
       accessor: (row) => (
         <div>
           <p className="font-bold text-sm">{row.customer?.name ?? row.guestName ?? "Guest"}</p>
-          <p className="text-xs text-slate-400">{row.orderType}</p>
+          <p className="text-xs text-slate-400 font-semibold">
+            {(row.customer as any)?.phone ?? row.guestPhone ?? "No Contact"}
+          </p>
         </div>
       ),
     },
     {
-      header: "Items",
+      header: "Method",
       accessor: (row) => (
-        <span className="text-xs text-slate-600 dark:text-slate-400">
-          {row.items.map((i) => `${i.menuItem?.name ?? "Item"} ×${i.quantity}`).join(", ")}
+        <span className="text-xs font-bold capitalize text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+          {row.paymentMethod}
+        </span>
+      ),
+    },
+    {
+      header: "Status",
+      accessor: (row) => (
+        <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-black capitalize ${
+          row.paymentStatus === "paid"
+            ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300"
+            : row.paymentStatus === "failed"
+            ? "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300"
+            : "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300"
+        }`}>
+          {row.paymentStatus}
         </span>
       ),
     },
     {
       header: "Total",
-      accessor: (row) => <span className="font-extrabold">₹{row.totalAmount}</span>,
-    },
-    {
-      header: "Payment",
-      accessor: (row) => {
-        const isPaid = row.paymentStatus === "paid";
-        return (
-          <div className="flex flex-col items-start gap-1">
-            <span className="text-xs font-bold capitalize text-slate-500 dark:text-slate-400">
-              {row.paymentMethod}
-            </span>
-            <div className="flex items-center gap-1.5">
-              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${
-                isPaid 
-                  ? "bg-green-100 text-green-800 dark:bg-green-500/10 dark:text-green-400"
-                  : row.paymentStatus === "failed"
-                  ? "bg-red-100 text-red-800 dark:bg-red-500/10 dark:text-red-400"
-                  : "bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400"
-              }`}>
-                {row.paymentStatus}
-              </span>
-            </div>
-            {!isPaid && row.status !== "cancelled" && (
-              <button
-                onClick={() => openModal(row)}
-                className="mt-1 px-2 py-0.5 rounded text-[10px] font-black border border-orange-500/30 bg-orange-50 hover:bg-orange-100 text-orange-700 dark:bg-orange-950/20 dark:text-orange-400 transition-all cursor-pointer shadow-sm"
-              >
-                Manage Payment
-              </button>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      header: "Status",
-      accessor: (row) => (
-        <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold capitalize ${STATUS_COLORS[row.status] ?? ""}`}>
-          {row.status}
-        </span>
-      ),
+      accessor: (row) => <span className="font-black text-slate-850 dark:text-slate-150">₹{row.totalAmount}</span>,
     },
     {
       header: "Actions",
       accessor: (row) => {
-        const next = getNextStatus(row);
-        const nextLabel = getNextLabel(row);
-        const canCancel = row.status !== "delivered" && row.status !== "cancelled";
-
+        const isPaid = row.paymentStatus === "paid";
         return (
-          <div className="flex items-center gap-2">
-            {next && (
-              <Button
-                onClick={() => handleDirectStatusUpdate(row._id, next)}
-                variant="primary"
-                className="!px-3 !py-1.5 text-xs font-bold"
+          <div className="flex items-center gap-1.5">
+            {!isPaid && row.status !== "cancelled" ? (
+              <button
+                onClick={() => openModal(row)}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-black border border-orange-500/30 bg-orange-50 hover:bg-orange-100 text-orange-700 dark:bg-orange-950/20 dark:text-orange-400 transition-all cursor-pointer shadow-sm"
               >
-                {nextLabel}
-              </Button>
-            )}
-            {canCancel && (
-              <Button
-                onClick={async () => {
-                  if (window.confirm("Are you sure you want to cancel this order?")) {
-                    handleDirectStatusUpdate(row._id, "cancelled");
-                  }
-                }}
-                variant="danger"
-                className="!px-3 !py-1.5 text-xs bg-red-500 hover:bg-red-600 text-white font-bold"
-              >
-                Cancel
-              </Button>
-            )}
-            {!next && !canCancel && (
+                Manage Payment
+              </button>
+            ) : (
               <span className="text-xs text-slate-400 font-bold">—</span>
             )}
           </div>
@@ -295,29 +214,75 @@ export const Orders: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      
+      {/* Page Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h2 className="text-2xl font-black text-slate-800 dark:text-slate-200">Incoming Orders</h2>
-          <p className="text-slate-500 dark:text-slate-400 text-sm mt-0.5">Manage live order workflow statuses</p>
+          <h2 className="text-2xl font-black text-slate-800 dark:text-slate-200 flex items-center gap-2">
+            <CreditCard className="w-6 h-6 text-orange-500" />
+            Payment Management
+          </h2>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mt-0.5">
+            Audit payment receipts, update statuses, and track revenue
+          </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {["all", "pending", "accepted", "preparing", "ready", "delivered", "cancelled"].map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition-all cursor-pointer ${
-                statusFilter === s
-                  ? "bg-orange-500 text-white"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
-              }`}
+        <button
+          onClick={fetchOrders}
+          className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-all cursor-pointer"
+        >
+          <RefreshCw className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Search and Filters Bar */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-3xl p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        
+        {/* Search */}
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Search by Order # or Customer name..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 font-semibold"
+          />
+        </div>
+
+        {/* Filters */}
+        <div className="flex items-center gap-3 flex-wrap">
+          
+          {/* Method Filter */}
+          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-1.5 rounded-2xl">
+            <span className="text-[10px] font-black uppercase text-slate-400">Method:</span>
+            <select
+              value={methodFilter}
+              onChange={(e) => setMethodFilter(e.target.value)}
+              className="bg-transparent border-0 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none capitalize"
             >
-              {s}
-            </button>
-          ))}
-          <button onClick={fetchOrders} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-all cursor-pointer">
-            <RefreshCw className="w-4 h-4" />
-          </button>
+              <option value="all">All Methods</option>
+              <option value="cash">Cash</option>
+              <option value="online">Online</option>
+            </select>
+          </div>
+
+          {/* Status Filter */}
+          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-1.5 rounded-2xl">
+            <span className="text-[10px] font-black uppercase text-slate-400">Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="bg-transparent border-0 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none capitalize"
+            >
+              <option value="all">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="paid">Paid</option>
+              <option value="failed">Failed</option>
+            </select>
+          </div>
+
         </div>
+
       </div>
 
       {error && (
@@ -327,6 +292,7 @@ export const Orders: React.FC = () => {
         </div>
       )}
 
+      {/* Main Table */}
       {loading ? (
         <div className="flex items-center justify-center h-48">
           <span className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
@@ -542,7 +508,9 @@ export const Orders: React.FC = () => {
           </div>
         </div>
       )}
+
     </div>
   );
 };
-export default Orders;
+
+export default Payments;

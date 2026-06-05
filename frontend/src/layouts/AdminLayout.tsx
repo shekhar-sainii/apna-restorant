@@ -14,17 +14,22 @@ import {
   Table2,
   BarChart3,
   Settings,
-  Bell
+  Bell,
+  CreditCard
 } from "lucide-react";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { useAuth } from "../context/AuthContext";
+import { socket } from "../services/socket";
+import authService from "../services/authService";
+import { useEffect } from "react";
 
 const MENU_GROUPS = [
   {
     label: "Core",
     items: [
       { name: "Dashboard", path: "/admin", icon: <LayoutDashboard className="w-5 h-5" />, exact: true },
-      { name: "Orders", path: "/admin/orders", icon: <ShoppingBag className="w-5 h-5" /> }
+      { name: "Orders", path: "/admin/orders", icon: <ShoppingBag className="w-5 h-5" /> },
+      { name: "Payments", path: "/admin/payments", icon: <CreditCard className="w-5 h-5" /> }
     ]
   },
   {
@@ -59,8 +64,56 @@ const MENU_GROUPS = [
 
 export const AdminLayout: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false);
+  const [toast, setToast] = useState<{ orderNumber: string; totalAmount: number; id: string } | null>(null);
   const location = useLocation();
   const { isAdmin, isStaff, user, logout } = useAuth();
+
+  useEffect(() => {
+    const token = authService.getToken();
+    if (token) {
+      socket.auth = { token };
+      socket.connect();
+    }
+
+    const handleNewOrder = (data: { order: any }) => {
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // A5
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.4);
+      } catch (e) {
+        console.error("Audio error", e);
+      }
+
+      setToast({
+        orderNumber: data.order.orderNumber,
+        totalAmount: data.order.totalAmount,
+        id: data.order._id,
+      });
+    };
+
+    socket.on("new-order", handleNewOrder);
+
+    return () => {
+      socket.off("new-order", handleNewOrder);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   // Role guard — only admin and staff can access
   if (!isAdmin && !isStaff) {
@@ -187,6 +240,32 @@ export const AdminLayout: React.FC = () => {
             <Outlet />
           </React.Suspense>
         </main>
+        {toast && (
+          <div className="fixed bottom-6 right-6 z-50 flex items-center justify-between gap-4 p-4 rounded-3xl bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-xl shadow-orange-500/20 border border-orange-400 max-w-sm animate-bounce">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🔔</span>
+              <div>
+                <p className="font-extrabold text-sm">New Order Received!</p>
+                <p className="text-xs opacity-90 mt-0.5">Order {toast.orderNumber} · ₹{toast.totalAmount}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link
+                to="/admin/orders"
+                onClick={() => setToast(null)}
+                className="px-3 py-1.5 rounded-xl bg-white text-orange-600 font-extrabold text-xs transition-all hover:bg-orange-50 shrink-0"
+              >
+                View
+              </Link>
+              <button
+                onClick={() => setToast(null)}
+                className="p-1 hover:bg-white/10 rounded-lg text-white/80 transition-all cursor-pointer shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

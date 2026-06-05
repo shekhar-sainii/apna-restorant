@@ -104,6 +104,12 @@ export const orderService = {
     }),
 
   cancel: (id: string) => fetchApi(`/orders/${id}/cancel`, { method: "PATCH" }),
+
+  updatePaymentStatus: (id: string, paymentStatus: string, paymentMethod?: string) =>
+    fetchApi(`/orders/${id}/payment`, {
+      method: "PATCH",
+      body: JSON.stringify({ paymentStatus, paymentMethod }),
+    }),
 };
 
 export default orderService;

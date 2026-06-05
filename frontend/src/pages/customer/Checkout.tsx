@@ -8,6 +8,8 @@ import {
   User,
   Phone,
   LogIn,
+  X,
+  Copy
 } from "lucide-react";
 import { Button } from "../../components/common/Button";
 import { Input } from "../../components/common/Input";
@@ -16,8 +18,6 @@ import { useAuth } from "../../context/AuthContext";
 import { calculateCartPricing } from "../../utils/pricing";
 import userService, { type UserAddress } from "../../services/userService";
 import orderService from "../../services/orderService";
-import paymentService from "../../services/paymentService";
-import { openRazorpayCheckout } from "../../utils/razorpay";
 import { getOrCreateGuestSessionId, saveGuestOrder } from "../../utils/guestSession";
 import couponService, { type AppliedCoupon } from "../../services/couponService";
 import { CouponInput } from "../../components/checkout/CouponInput";
@@ -25,10 +25,10 @@ import { consumePendingCoupon } from "../../utils/offers";
 import { getDineInSession, clearDineInSession } from "../../utils/dineInSession";
 import { DineInBanner } from "../../components/customer/DineInBanner";
 import { OrderSummary } from "../../components/checkout/OrderSummary";
+import { fetchAddressByPincode } from "../../utils/pincode";
 
 const PAYMENT_METHODS = [
-  { id: "online" as const, label: "Pay Online", icon: "💳", sub: "UPI, Cards, Net Banking" },
-  { id: "cash" as const, label: "Cash on Delivery", icon: "💵", sub: "Pay when order arrives" },
+  { id: "cash" as const, label: "Cash on Delivery / Pay on Delivery", icon: "💵", sub: "Pay with Cash or UPI when order arrives" },
 ];
 
 function toDeliveryAddress(addr: UserAddress) {
@@ -68,6 +68,7 @@ export const Checkout: React.FC = () => {
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [placedOrder, setPlacedOrder] = useState<{ _id: string; orderNumber: string } | null>(null);
+  const [upiPaymentOrder, setUpiPaymentOrder] = useState<any | null>(null);
 
   const pricing = calculateCartPricing(items, {
     couponDiscount: appliedCoupon?.discountAmount,
@@ -117,6 +118,21 @@ export const Checkout: React.FC = () => {
     load();
   }, [isGuest, isDineIn]);
 
+  useEffect(() => {
+    const pincode = guestAddress.pincode;
+    if (pincode.length === 6) {
+      fetchAddressByPincode(pincode).then((details) => {
+        if (details) {
+          setGuestAddress((a) => ({
+            ...a,
+            city: details.city,
+            line2: details.area,
+          }));
+        }
+      });
+    }
+  }, [guestAddress.pincode]);
+
   const getDeliveryAddress = () => {
     if (isDineIn) return null;
     if (isGuest) {
@@ -135,19 +151,6 @@ export const Checkout: React.FC = () => {
     return selected ? toDeliveryAddress(selected) : null;
   };
 
-  const canPlaceOrder = () => {
-    if (isDineIn) return true;
-    if (isGuest) {
-      return (
-        guestName.trim().length >= 2 &&
-        guestPhone.trim().length >= 10 &&
-        guestAddress.line1.trim() &&
-        guestAddress.city.trim() &&
-        guestAddress.pincode.trim().length >= 6
-      );
-    }
-    return addresses.length > 0 && !!selectedAddressId;
-  };
 
   const finishOrder = (orderId: string, orderNumber: string) => {
     if (isGuest) saveGuestOrder(orderId, orderNumber);
@@ -159,14 +162,29 @@ export const Checkout: React.FC = () => {
     if (items.length === 0) return;
 
     if (!isDineIn) {
-      const deliveryAddress = getDeliveryAddress();
-      if (!deliveryAddress) {
-        setError(isGuest ? "Please fill delivery address details" : "Please select a delivery address");
-        return;
-      }
-      if (isGuest && !canPlaceOrder()) {
-        setError("Please enter your name, phone, and complete address");
-        return;
+      if (isGuest) {
+        if (guestName.trim().length < 2) {
+          alert("Please enter a valid name (at least 2 characters)");
+          setError("Please enter a valid name");
+          return;
+        }
+        if (guestPhone.trim().length < 10) {
+          alert("Please enter a valid 10-digit phone number");
+          setError("Please enter a valid phone number");
+          return;
+        }
+        if (!guestAddress.line1.trim() || !guestAddress.city.trim() || guestAddress.pincode.trim().length < 6) {
+          alert("Please fill in your complete delivery address with a valid 6-digit pincode");
+          setError("Please enter complete delivery address details");
+          return;
+        }
+      } else {
+        const deliveryAddress = getDeliveryAddress();
+        if (!deliveryAddress) {
+          alert("Please select or add a delivery address to place your order");
+          setError("Please select a delivery address");
+          return;
+        }
       }
     }
 
@@ -220,22 +238,7 @@ export const Checkout: React.FC = () => {
       }
 
       if (paymentMethod === "online") {
-        const payRes = await paymentService.createRazorpayOrder(order._id);
-        await openRazorpayCheckout(payRes.data, {
-          name: isGuest ? guestName.trim() : (user?.name ?? "Customer"),
-          email: user?.email,
-          phone: isGuest ? guestPhone.trim() : user?.phone,
-          description: `Order ${order.orderNumber}`,
-          onSuccess: async (response) => {
-            await paymentService.verifyPayment({
-              razorpayOrderId: response.razorpay_order_id,
-              razorpayPaymentId: response.razorpay_payment_id,
-              razorpaySignature: response.razorpay_signature,
-            });
-            finishOrder(order._id, order.orderNumber);
-          },
-          onDismiss: () => setPlacing(false),
-        });
+        setUpiPaymentOrder(order);
         return;
       }
 
@@ -535,7 +538,7 @@ export const Checkout: React.FC = () => {
           <Button
             variant="primary"
             className="w-full"
-            disabled={placing || (!isDineIn && (loading || !canPlaceOrder()))}
+            disabled={placing || (!isDineIn && loading)}
             onClick={placeOrder}
           >
             {placing ? (
@@ -559,6 +562,107 @@ export const Checkout: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* UPI QR Code Payment Modal */}
+      {upiPaymentOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-md shadow-2xl p-6 overflow-hidden transform transition-all flex flex-col items-center text-center">
+            
+            <div className="w-full flex justify-between items-center mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <span className="text-sm font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <CreditCard className="w-4 h-4 text-orange-500" />
+                Scan & Pay UPI
+              </span>
+              <button
+                onClick={async () => {
+                  if (window.confirm("Do you want to cancel this order?")) {
+                    try {
+                      await orderService.cancel(upiPaymentOrder._id);
+                      setUpiPaymentOrder(null);
+                    } catch (err: any) {
+                      alert(err.message || "Failed to cancel order");
+                    }
+                  }
+                }}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mb-2">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Order Number</p>
+              <p className="text-sm font-black text-orange-500">{upiPaymentOrder.orderNumber}</p>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Amount to Pay</p>
+              <p className="text-3xl font-black text-slate-800 dark:text-slate-100">₹{upiPaymentOrder.totalAmount}</p>
+            </div>
+
+            {/* QR Code Card */}
+            <div className="p-4 bg-white rounded-2xl shadow-inner border border-slate-100 dark:border-slate-800 mb-4">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+                  `upi://pay?pa=apnarestorant@upi&pn=Apna%20Restorant&am=${upiPaymentOrder.totalAmount}&cu=INR&tn=Order%20${upiPaymentOrder.orderNumber}`
+                )}`}
+                alt="UPI Payment QR Code"
+                className="w-48 h-48 block object-contain"
+              />
+            </div>
+
+            {/* UPI ID Copy Field */}
+            <div className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl p-2.5 flex items-center justify-between gap-2 mb-4">
+              <span className="text-xs font-extrabold text-slate-500 dark:text-slate-400 select-all">
+                apnarestorant@upi
+              </span>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText("apnarestorant@upi");
+                  alert("UPI ID copied to clipboard!");
+                }}
+                className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 transition-all cursor-pointer"
+                title="Copy UPI ID"
+              >
+                <Copy className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 dark:text-slate-500 font-bold mb-6 leading-relaxed max-w-sm">
+              Scan this QR using PhonePe, GooglePay, Paytm or any UPI App to complete your payment. Once done, click the button below to confirm.
+            </p>
+
+            <div className="w-full flex flex-col gap-2">
+              <Button
+                variant="primary"
+                onClick={() => {
+                  finishOrder(upiPaymentOrder._id, upiPaymentOrder.orderNumber);
+                  setUpiPaymentOrder(null);
+                }}
+                className="w-full py-3 font-bold"
+              >
+                I have Paid / Continue
+              </Button>
+              <button
+                onClick={async () => {
+                  if (window.confirm("Do you want to cancel this order?")) {
+                    try {
+                      await orderService.cancel(upiPaymentOrder._id);
+                      setUpiPaymentOrder(null);
+                    } catch (err: any) {
+                      alert(err.message || "Failed to cancel order");
+                    }
+                  }
+                }}
+                className="text-xs font-bold text-red-500 hover:text-red-600 dark:hover:text-red-400 py-1.5"
+              >
+                Cancel Order
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 };

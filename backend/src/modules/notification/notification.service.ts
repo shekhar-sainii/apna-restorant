@@ -1,25 +1,28 @@
 import notificationRepository from "./notification.repository";
 import ApiError from "../../utils/ApiError";
+import socketService from "../../services/socket.service";
 
 class NotificationService {
   async createForAdmins(data: { type: string; title: string; message: string; orderId: any }): Promise<void> {
-    await notificationRepository.create({
+    const notif = await notificationRepository.create({
       recipientRole: "admin",
       type: data.type as any,
       title: data.title,
       message: data.message,
       order: data.orderId,
     });
+    socketService.emitToAdmins("new-notification", { notification: notif });
   }
 
   async createForUser(data: { userId: any; type: string; title: string; message: string; orderId: any }): Promise<void> {
-    await notificationRepository.create({
+    const notif = await notificationRepository.create({
       recipient: data.userId,
       type: data.type as any,
       title: data.title,
       message: data.message,
       order: data.orderId,
     });
+    socketService.emitToUser(data.userId.toString(), "new-notification", { notification: notif });
   }
 
   async getMyNotifications(user: any) {

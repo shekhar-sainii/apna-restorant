@@ -5,6 +5,7 @@ import { Button } from "../../components/common/Button";
 import userService, { type UserAddress, type AddressPayload } from "../../services/userService";
 import authService from "../../services/authService";
 import { useAuth } from "../../context/AuthContext";
+import { fetchAddressByPincode } from "../../utils/pincode";
 
 export const Profile: React.FC = () => {
   const { user } = useAuth();
@@ -49,6 +50,21 @@ export const Profile: React.FC = () => {
   useEffect(() => {
     loadProfile();
   }, []);
+
+  useEffect(() => {
+    const pincode = form.pincode;
+    if (pincode.length === 6) {
+      fetchAddressByPincode(pincode).then((details) => {
+        if (details) {
+          setForm((f) => ({
+            ...f,
+            city: details.city,
+            line2: details.area,
+          }));
+        }
+      });
+    }
+  }, [form.pincode]);
 
   const saveProfile = async (e: React.FormEvent) => {
     e.preventDefault();

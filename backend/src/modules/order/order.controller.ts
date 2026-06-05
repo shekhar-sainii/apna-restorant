@@ -4,6 +4,8 @@ import orderRepository from "./order.repository";
 import ApiResponse from "../../utils/ApiResponse";
 import ApiError from "../../utils/ApiError";
 import asyncHandler from "../../utils/asyncHandler";
+import socketService from "../../services/socket.service";
+import Order from "../../models/Order.model";
 
 export const createOrder = asyncHandler(async (req: Request, res: Response) => {
   const {
@@ -90,4 +92,46 @@ export const assignStaff = asyncHandler(async (req: Request, res: Response) => {
   const { staffId } = req.body;
   const order = await orderRepository.assignStaff(req.params.id, staffId);
   return ApiResponse.success(res, "Staff assigned", order);
+});
+
+export const updatePaymentStatus = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) throw ApiError.unauthorized("Authentication required");
+  const { paymentStatus, paymentMethod } = req.body;
+
+  const order = await orderRepository.findById(req.params.id);
+  if (!order) throw ApiError.notFound("Order not found");
+
+  if (order.status === "cancelled") {
+    throw ApiError.badRequest("Cannot update payment of a cancelled order");
+  }
+
+  const updateData: any = {};
+  if (paymentStatus) {
+    if (!["pending", "paid", "failed"].includes(paymentStatus)) {
+      throw ApiError.badRequest("Invalid payment status");
+    }
+    updateData.paymentStatus = paymentStatus;
+  }
+  if (paymentMethod) {
+    if (!["cash", "online"].includes(paymentMethod)) {
+      throw ApiError.badRequest("Invalid payment method");
+    }
+    updateData.paymentMethod = paymentMethod;
+  }
+
+  const updatedOrder = await Order.findByIdAndUpdate(req.params.id, updateData, { new: true });
+  if (!updatedOrder) throw ApiError.notFound("Order not found");
+
+  socketService.emitToOrderRoom(updatedOrder._id.toString(), "payment-status-updated", {
+    orderId: updatedOrder._id,
+    paymentStatus: updatedOrder.paymentStatus,
+    paymentMethod: updatedOrder.paymentMethod,
+  });
+  socketService.emitToAdmins("payment-status-updated", {
+    orderId: updatedOrder._id,
+    paymentStatus: updatedOrder.paymentStatus,
+    paymentMethod: updatedOrder.paymentMethod,
+  });
+
+  return ApiResponse.success(res, "Payment details updated", updatedOrder);
 });
