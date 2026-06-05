@@ -83,3 +83,6 @@ Desktop.ini
 # Docker / Compose temporary data
 .docker/
 *data/
+
+# Documentation
+docs/
